@@ -1,4 +1,5 @@
 #include "mavlink_parser.h"
+#include "common.h"
 #include "mavlink.h"
 
 extern bool verbose;
@@ -41,9 +42,14 @@ void mav_command_long(mavlink_message_t *recvd_msg)
     if (verbose)
         printf("[INFO] received command_long message.\n");
 
-    /* decode command_long message */
+    /* Decode command_long message */
     mavlink_command_long_t mav_cmd_long;
     mavlink_msg_command_long_decode(recvd_msg, &mav_cmd_long);
+
+    /* Ignore the message if the target id does not match the system id */
+    if (get_sys_id() != mav_cmd_long.target_system) {
+        return;
+    }
 
     switch (mav_cmd_long.command) {
     case MAV_CMD_DO_SET_ROI_LOCATION: /* 195 */

@@ -1,4 +1,5 @@
 #include "mavlink_publisher.h"
+#include "common.h"
 #include "mavlink.h"
 
 void mavlink_send_heartbeat(void)

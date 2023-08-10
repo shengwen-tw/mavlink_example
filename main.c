@@ -19,6 +19,8 @@
 #include "net.h"
 #include "serial.h"
 
+#define SYS_ID 1 /* System ID of this program */
+
 enum { SERIAL_MODE, NET_MODE };
 
 pthread_t thread1, thread2;
@@ -27,6 +29,11 @@ mqd_t mqd_mavlink;
 
 int mavlink_fd;
 bool verbose = false;
+
+uint8_t get_sys_id(void)
+{
+    return SYS_ID;
+}
 
 void *mavlink_rx_thread(void *arg)
 {
@@ -72,7 +79,7 @@ void *mavlink_tx_thread(void *arg)
      * 2. react to the received message (i.e., protocols)
      */
 
-    MSG_SCHEDULER_INIT(1);  // 1Hz
+    MSG_SCHEDULER_INIT(1); /* 1Hz */
 
     mavlink_message_t recvd_msg;
 
@@ -90,10 +97,8 @@ void *mavlink_tx_thread(void *arg)
             parse_mavlink_msg(&recvd_msg);
         }
 
-        /* Microservice handlers: */
-
         /* Limit CPU usage of the thread with execution frequency of 100Hz */
-        usleep(10000);  // 10000us = 10ms
+        usleep(10000); /* 10000us = 10ms */
     }
 }
 
