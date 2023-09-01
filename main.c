@@ -1,7 +1,7 @@
 #include <arpa/inet.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <getopt.h>
-#include <mqueue.h>
 #include <pthread.h>
 #include <semaphore.h>
 #include <signal.h>
@@ -10,7 +10,9 @@
 #include <stdlib.h>
 #include <strings.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/time.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 #include "mavlink.h"
@@ -19,13 +21,17 @@
 #include "net.h"
 #include "serial.h"
 
-#define SYS_ID 1 /* System ID of this program */
+/* System ID of this program */
+#define SYS_ID 1
+
+/* For passing received message from rx to tx thread */
+#define MSG_FIFO "mavlink_fifo"
 
 enum { SERIAL_MODE, NET_MODE };
 
 pthread_t thread1, thread2;
 sem_t sem_terminate;
-mqd_t mqd_mavlink;
+int msg_fifo_tx, msg_fifo_rx;
 
 int mavlink_fd;
 bool verbose = false;
@@ -47,7 +53,7 @@ void *mavlink_rx_thread(void *arg)
         /* Try parsing the message with new income byte */
         if (mavlink_parse_char(MAVLINK_COMM_1, c, &recvd_msg, &status) == 1) {
             /* Notify the tx thread */
-            mq_send(mqd_mavlink, (char *) &recvd_msg, sizeof(recvd_msg), 0);
+            write(msg_fifo_tx, &recvd_msg, sizeof(recvd_msg));
         }
     }
 }
@@ -92,8 +98,8 @@ void *mavlink_tx_thread(void *arg)
         /* clang-format on */
 
         /* Trigger the command parser if received new message from the queue */
-        if (mq_receive(mqd_mavlink, (char *) &recvd_msg, sizeof(recvd_msg),
-                       0) != -1) {
+        if (read(msg_fifo_rx, &recvd_msg, sizeof(recvd_msg)) ==
+            sizeof(recvd_msg)) {
             parse_mavlink_msg(&recvd_msg);
         }
 
@@ -222,6 +228,12 @@ static void handle_options(int argc,
             exit(1);
         }
     }
+
+    if (verbose) {
+        printf("verbose on\n");
+    } else {
+        printf("verbose off\n");
+    }
 }
 
 int main(int argc, char **argv)
@@ -244,19 +256,14 @@ int main(int argc, char **argv)
         mavlink_fd = open_net(ip_addr, atoi(port_num));
     }
 
-    /* Create a mqueue for passing the received mavlink message from
+    /* Create a fifo for passing the received mavlink message from
      * rx thread to the tx thread
      */
-    struct mq_attr attr = {.mq_flags = 0,
-                           .mq_maxmsg = 10,
-                           .mq_msgsize = sizeof(mavlink_message_t),
-                           .mq_curmsgs = 0};
-    int flags = O_NONBLOCK | O_RDWR | O_CREAT;
-    int _mode = S_IRUSR | S_IWUSR;
-    mqd_mavlink = mq_open("/mavlink", flags, _mode, &attr);
-
-    if (mqd_mavlink == -1) {
-        perror("mq_open");
+    mkfifo(MSG_FIFO, 0666);
+    msg_fifo_tx = open(MSG_FIFO, O_RDWR);
+    msg_fifo_rx = open(MSG_FIFO, O_RDWR | O_NONBLOCK);
+    if ((msg_fifo_tx == -1) || (msg_fifo_rx == -1)) {
+        perror("mkfifo");
         exit(1);
     }
 
@@ -275,8 +282,8 @@ int main(int argc, char **argv)
 
     /* Clean up */
     sem_destroy(&sem_terminate);
-    mq_close(mqd_mavlink);
-    mq_unlink("/mavlink");
+    close(msg_fifo_tx);
+    close(msg_fifo_rx);
     close(mavlink_fd);
 
     return 0;
