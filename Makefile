@@ -15,7 +15,7 @@ else ifeq ($(UNAME), FreeBSD)
   CFLAGS :=
 endif
 
-CFLAGS += -O2 -Wall
+CFLAGS += -O2 -Wall -pthread 
 
 CFLAGS += -I ./
 CFLAGS += -I ./lib/mavlink_v2
